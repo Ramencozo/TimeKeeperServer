@@ -1,0 +1,437 @@
+
+<!--
+Copyright 2011, Google Inc.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+    * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+    * Neither the name of Google Inc. nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+<!--
+A simple console for testing WebSocket server.
+
+Type an address into the top text input and click connect to establish
+WebSocket. Then, type some message into the bottom text input and click send
+to send the message. Received/sent messages and connection state will be shown
+on the middle textarea.
+-->
+
+<html>
+<head>
+<title>WebSocket console</title>
+<script>
+var socket = null;
+
+var showTimeStamp = false;
+
+var addressBox = null;
+var logBox = null;
+var fileBox = null;
+var codeBox = null;
+var reasonBox = null;
+
+var hourSelect = null;
+var minuteSelect = null;
+var secondSelect = null;
+
+var isCounting = null;
+
+var timeView = null;
+
+function getTimeStamp() {
+  return new Date().getTime();
+}
+
+function addToLog(log) {
+  if (showTimeStamp) {
+    logBox.value += '[' + getTimeStamp() + '] ';
+  }
+  logBox.value += log + '\n'
+  // Large enough to keep showing the latest message.
+  logBox.scrollTop = 1000000;
+}
+
+function setbinarytype(binaryType) {
+  if (!socket) {
+    addToLog('Not connected');
+    return;
+  }
+
+  socket.binaryType = binaryType;
+  addToLog('Set binaryType to ' + binaryType);
+}
+
+function setTime() {
+  if (!socket) {
+    addToLog('Not connected');
+    return;
+  }
+
+  var hourIndex = hourSelect.selectedIndex;
+  var hour = hourSelect.options[hourIndex].value;
+  var minuteIndex = minuteSelect.selectedIndex;
+  var minute = minuteSelect.options[minuteIndex].value;
+  var secondIndex = secondSelect.selectedIndex;
+  var second = secondSelect.options[secondIndex].value;
+
+  socket.send("set," + hour + ":" + minute + ":" + second);
+  addToLog('> ' + 'set,' + hour + ':' + minute + ':' + second);
+}
+
+function startPause() {
+  if (!socket) {
+    addToLog('Not connected');
+    return;
+  }
+
+  if(isCounting == 'f'){
+    socket.send('start,null');
+    addToLog('> ' + 'start,null');
+
+    isCounting = 't';
+  }else if(isCounting == 't'){
+    socket.send('pause,null');
+    addToLog('> ' + 'pause,null');
+
+    isCounting = 'f';
+  }
+}
+
+function connect() {
+  if ('WebSocket' in window) {
+    socket = new WebSocket(addressBox.value);
+  } else if ('MozWebSocket' in window) {
+    socket = new MozWebSocket(addressBox.value);
+  } else {
+    return;
+  }
+
+  socket.onopen = function () {
+    addToLog('Opened');
+  };
+  socket.onmessage = function (event) {
+    addToLog('< ' + event.data);
+    
+    if(	event.data != 'keep_alive' &&
+    	event.data != 'start,null' &&
+    	event.data != 'pause,null' &&
+    	event.data != 'reset,null'){
+    	timeView.innerHTML = event.data;
+    }
+  };
+  socket.onerror = function () {
+    addToLog('Error');
+  };
+  socket.onclose = function (event) {
+    var logMessage = 'Closed (';
+    if ((arguments.length == 1) && ('CloseEvent' in window) &&
+        (event instanceof CloseEvent)) {
+      logMessage += 'wasClean = ' + event.wasClean;
+      // code and reason are present only for
+      // draft-ietf-hybi-thewebsocketprotocol-06 and later
+      if ('code' in event) {
+        logMessage += ', code = ' + event.code;
+      }
+      if ('reason' in event) {
+        logMessage += ', reason = ' + event.reason;
+      }
+    } else {
+      logMessage += 'CloseEvent is not available';
+    }
+    addToLog(logMessage + ')');
+  };
+
+  addToLog('Connect ' + addressBox.value);
+}
+
+function closeSocket() {
+  if (!socket) {
+    addToLog('Not connected');
+    return;
+  }
+
+  if (codeBox.value || reasonBox.value) {
+    socket.close(codeBox.value, reasonBox.value);
+  } else {
+    socket.close();
+  }
+}
+
+function printState() {
+  if (!socket) {
+    addToLog('Not connected');
+    return;
+  }
+
+  addToLog(
+      'url = ' + socket.url +
+      ', readyState = ' + socket.readyState +
+      ', bufferedAmount = ' + socket.bufferedAmount);
+}
+
+function init() {
+  var scheme = window.location.protocol == 'https:' ? 'wss://' : 'ws://';
+  var defaultAddress = scheme + window.location.host + '/echo';
+
+  addressBox = document.getElementById('address');
+  logBox = document.getElementById('log');
+  fileBox = document.getElementById('file');
+  codeBox = document.getElementById('code');
+  reasonBox = document.getElementById('reason');
+
+  hourSelect = document.getElementById('hour');
+  minuteSelect = document.getElementById('minute');
+  secondSelect = document.getElementById('second');
+
+  isCounting = 'f';
+
+  timeView = document.getElementById('time');
+
+  addressBox.value = defaultAddress;
+
+  if ('MozWebSocket' in window) {
+    addToLog('Use MozWebSocket');
+  } else if (!('WebSocket' in window)) {
+    addToLog('WebSocket is not available');
+  }
+}
+</script>
+</head>
+<body onload="init()">
+
+<form action="#" onsubmit="connect(); return false;">
+<input type="text" id="address" size="40">
+<input type="submit" value="connect">
+<input type="button" value="print state" onclick="printState();">
+</form>
+
+<textarea id="log" rows="5" cols="50" readonly></textarea>
+<br>
+<br>
+<form action="#" onsubmit="setTime(); return false;" style="display:inline; font-size:32px">
+Hour:
+<select id="hour" onchange="" style="font-size:32px">
+<option value="00">00</option>
+<option value="01">01</option>
+<option value="02">02</option>
+<option value="03">03</option>
+<option value="04">04</option>
+<option value="05">05</option>
+<option value="06">06</option>
+<option value="07">07</option>
+<option value="08">08</option>
+<option value="09">09</option>
+<option value="10">10</option>
+<option value="11">11</option>
+<option value="12">12</option>
+<option value="13">13</option>
+<option value="14">14</option>
+<option value="15">15</option>
+<option value="16">16</option>
+<option value="17">17</option>
+<option value="18">18</option>
+<option value="19">19</option>
+<option value="20">20</option>
+<option value="21">21</option>
+<option value="22">22</option>
+<option value="23">23</option>
+<option value="24">24</option>
+<option value="25">25</option>
+<option value="26">26</option>
+<option value="27">27</option>
+<option value="28">28</option>
+<option value="29">29</option>
+<option value="30">30</option>
+<option value="31">31</option>
+<option value="32">32</option>
+<option value="33">33</option>
+<option value="34">34</option>
+<option value="35">35</option>
+<option value="36">36</option>
+<option value="37">37</option>
+<option value="38">38</option>
+<option value="39">39</option>
+<option value="40">40</option>
+<option value="41">41</option>
+<option value="42">42</option>
+<option value="43">43</option>
+<option value="44">44</option>
+<option value="45">45</option>
+<option value="46">46</option>
+<option value="47">47</option>
+<option value="48">48</option>
+<option value="49">49</option>
+<option value="50">50</option>
+<option value="51">51</option>
+<option value="52">52</option>
+<option value="53">53</option>
+<option value="54">54</option>
+<option value="55">55</option>
+<option value="56">56</option>
+<option value="57">57</option>
+<option value="58">58</option>
+<option value="59">59</option>
+</select>
+Minute:
+<select id="minute" onchange="" style="font-size:32px">
+<option value="00">00</option>
+<option value="01">01</option>
+<option value="02">02</option>
+<option value="03">03</option>
+<option value="04">04</option>
+<option value="05">05</option>
+<option value="06">06</option>
+<option value="07">07</option>
+<option value="08">08</option>
+<option value="09">09</option>
+<option value="10">10</option>
+<option value="11">11</option>
+<option value="12">12</option>
+<option value="13">13</option>
+<option value="14">14</option>
+<option value="15">15</option>
+<option value="16">16</option>
+<option value="17">17</option>
+<option value="18">18</option>
+<option value="19">19</option>
+<option value="20">20</option>
+<option value="21">21</option>
+<option value="22">22</option>
+<option value="23">23</option>
+<option value="24">24</option>
+<option value="25">25</option>
+<option value="26">26</option>
+<option value="27">27</option>
+<option value="28">28</option>
+<option value="29">29</option>
+<option value="30">30</option>
+<option value="31">31</option>
+<option value="32">32</option>
+<option value="33">33</option>
+<option value="34">34</option>
+<option value="35">35</option>
+<option value="36">36</option>
+<option value="37">37</option>
+<option value="38">38</option>
+<option value="39">39</option>
+<option value="40">40</option>
+<option value="41">41</option>
+<option value="42">42</option>
+<option value="43">43</option>
+<option value="44">44</option>
+<option value="45">45</option>
+<option value="46">46</option>
+<option value="47">47</option>
+<option value="48">48</option>
+<option value="49">49</option>
+<option value="50">50</option>
+<option value="51">51</option>
+<option value="52">52</option>
+<option value="53">53</option>
+<option value="54">54</option>
+<option value="55">55</option>
+<option value="56">56</option>
+<option value="57">57</option>
+<option value="58">58</option>
+<option value="59">59</option>
+</select>
+Second:
+<select id="second" onchange="" style="font-size:32px">
+<option value="00">00</option>
+<option value="01">01</option>
+<option value="02">02</option>
+<option value="03">03</option>
+<option value="04">04</option>
+<option value="05">05</option>
+<option value="06">06</option>
+<option value="07">07</option>
+<option value="08">08</option>
+<option value="09">09</option>
+<option value="10">10</option>
+<option value="11">11</option>
+<option value="12">12</option>
+<option value="13">13</option>
+<option value="14">14</option>
+<option value="15">15</option>
+<option value="16">16</option>
+<option value="17">17</option>
+<option value="18">18</option>
+<option value="19">19</option>
+<option value="20">20</option>
+<option value="21">21</option>
+<option value="22">22</option>
+<option value="23">23</option>
+<option value="24">24</option>
+<option value="25">25</option>
+<option value="26">26</option>
+<option value="27">27</option>
+<option value="28">28</option>
+<option value="29">29</option>
+<option value="30">30</option>
+<option value="31">31</option>
+<option value="32">32</option>
+<option value="33">33</option>
+<option value="34">34</option>
+<option value="35">35</option>
+<option value="36">36</option>
+<option value="37">37</option>
+<option value="38">38</option>
+<option value="39">39</option>
+<option value="40">40</option>
+<option value="41">41</option>
+<option value="42">42</option>
+<option value="43">43</option>
+<option value="44">44</option>
+<option value="45">45</option>
+<option value="46">46</option>
+<option value="47">47</option>
+<option value="48">48</option>
+<option value="49">49</option>
+<option value="50">50</option>
+<option value="51">51</option>
+<option value="52">52</option>
+<option value="53">53</option>
+<option value="54">54</option>
+<option value="55">55</option>
+<option value="56">56</option>
+<option value="57">57</option>
+<option value="58">58</option>
+<option value="59">59</option>
+</select>
+
+<input type="submit" value="SetTime" style="font-size:32px">
+</form>
+
+<form action="#" onsubmit="startPause(); return false;" style="display:inline;">
+<input type="submit" value="Start/Pause" style="font-size:32px">
+</form>
+<form action="#" onsubmit="reset(); return false;" style="display:inline;">
+<input type="submit" value="Reset" style="font-size:32px">
+<div id="time" style="font-size:256px;">00:00:00</div>
+</form>
+
+</body>
+</html>
